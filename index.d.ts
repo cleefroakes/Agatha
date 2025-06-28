@@ -1,41 +1,11 @@
-/*---------------------------------------------------------------------------------------------
- *  Copyright (c) Microsoft Corporation. All rights reserved.
- *  Licensed under the MIT License.
- *  REQUIREMENT: This definition is dependent on the @types/node definition.
- *  Install with `npm install @types/node --save-dev`
- *--------------------------------------------------------------------------------------------*/
+/**
+Merges "own" properties from a source to a destination object, including non-enumerable and accessor-defined properties. It retains original values and descriptors, ensuring the destination receives a complete and accurate copy of the source's properties.
 
-declare module 'iconv-lite' {
-	// Basic API
-	export function decode(buffer: Buffer, encoding: string, options?: Options): string;
+@param destination - The object to receive properties.
+@param source - The object providing properties.
+@param overwrite - Optional boolean to control overwriting of existing properties. Defaults to true.
+@returns The modified destination object.
+*/
+declare function mergeDescriptors<T, U>(destination: T, source: U, overwrite?: boolean): T & U;
 
-	export function encode(content: string, encoding: string, options?: Options): Buffer;
-
-	export function encodingExists(encoding: string): boolean;
-
-	// Stream API
-	export function decodeStream(encoding: string, options?: Options): NodeJS.ReadWriteStream;
-
-	export function encodeStream(encoding: string, options?: Options): NodeJS.ReadWriteStream;
-
-	// Low-level stream APIs
-	export function getEncoder(encoding: string, options?: Options): EncoderStream;
-
-	export function getDecoder(encoding: string, options?: Options): DecoderStream;
-}
-
-export interface Options {
-    stripBOM?: boolean;
-    addBOM?: boolean;
-    defaultEncoding?: string;
-}
-
-export interface EncoderStream {
-	write(str: string): Buffer;
-	end(): Buffer | undefined;
-}
-
-export interface DecoderStream {
-	write(buf: Buffer): string;
-	end(): string | undefined;
-}
+export = mergeDescriptors;
