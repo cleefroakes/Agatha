@@ -1,45 +1,45 @@
 {
-  "name": "depd",
-  "description": "Deprecate all the things",
-  "version": "2.0.0",
-  "author": "Douglas Christopher Wilson <doug@somethingdoug.com>",
+  "name": "forwarded",
+  "description": "Parse HTTP X-Forwarded-For header",
+  "version": "0.2.0",
+  "contributors": [
+    "Douglas Christopher Wilson <doug@somethingdoug.com>"
+  ],
   "license": "MIT",
   "keywords": [
-    "deprecate",
-    "deprecated"
+    "x-forwarded-for",
+    "http",
+    "req"
   ],
-  "repository": "dougwilson/nodejs-depd",
-  "browser": "lib/browser/index.js",
+  "repository": "jshttp/forwarded",
   "devDependencies": {
-    "benchmark": "2.1.4",
     "beautify-benchmark": "0.2.4",
-    "eslint": "5.7.0",
-    "eslint-config-standard": "12.0.0",
-    "eslint-plugin-import": "2.14.0",
-    "eslint-plugin-markdown": "1.0.0-beta.7",
-    "eslint-plugin-node": "7.0.1",
-    "eslint-plugin-promise": "4.0.1",
-    "eslint-plugin-standard": "4.0.0",
-    "istanbul": "0.4.5",
-    "mocha": "5.2.0",
-    "safe-buffer": "5.1.2",
-    "uid-safe": "2.1.5"
+    "benchmark": "2.1.4",
+    "deep-equal": "1.0.1",
+    "eslint": "7.27.0",
+    "eslint-config-standard": "14.1.1",
+    "eslint-plugin-import": "2.23.4",
+    "eslint-plugin-node": "11.1.0",
+    "eslint-plugin-promise": "4.3.1",
+    "eslint-plugin-standard": "4.1.0",
+    "mocha": "8.4.0",
+    "nyc": "15.1.0"
   },
   "files": [
-    "lib/",
-    "History.md",
     "LICENSE",
-    "index.js",
-    "Readme.md"
+    "HISTORY.md",
+    "README.md",
+    "index.js"
   ],
   "engines": {
-    "node": ">= 0.8"
+    "node": ">= 0.6"
   },
   "scripts": {
     "bench": "node benchmark/index.js",
-    "lint": "eslint --plugin markdown --ext js,md .",
-    "test": "mocha --reporter spec --bail test/",
-    "test-ci": "istanbul cover --print=none node_modules/mocha/bin/_mocha -- --reporter spec test/ && istanbul report lcovonly text-summary",
-    "test-cov": "istanbul cover --print=none node_modules/mocha/bin/_mocha -- --reporter dot test/ && istanbul report lcov text-summary"
+    "lint": "eslint .",
+    "test": "mocha --reporter spec --bail --check-leaks test/",
+    "test-ci": "nyc --reporter=lcov --reporter=text npm test",
+    "test-cov": "nyc --reporter=html --reporter=text npm test",
+    "version": "node scripts/version-history.js && git add HISTORY.md"
   }
 }
