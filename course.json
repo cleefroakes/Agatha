@@ -1,0 +1,12 @@
+[
+  {
+    "id": 1,
+    "title": "Physics 101",
+    "topics": ["physics"]
+  },
+  {
+    "id": 2,
+    "title": "Calculus I",
+    "topics": ["calculus"]
+  }
+]
