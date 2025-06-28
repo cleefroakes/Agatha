@@ -1,62 +1,36 @@
-# side-channel-map <sup>[![Version Badge][npm-version-svg]][package-url]</sup>
+# wrappy
 
-[![github actions][actions-image]][actions-url]
-[![coverage][codecov-image]][codecov-url]
-[![License][license-image]][license-url]
-[![Downloads][downloads-image]][downloads-url]
+Callback wrapping utility
 
-[![npm badge][npm-badge-png]][package-url]
+## USAGE
 
-Store information about any JS value in a side channel, using a Map.
+```javascript
+var wrappy = require("wrappy")
 
-Warning: if the `key` is an object, this implementation will leak memory until you `delete` it.
-Use [`side-channel`](https://npmjs.com/side-channel) for the best available strategy.
+// var wrapper = wrappy(wrapperFunction)
 
-## Getting started
+// make sure a cb is called only once
+// See also: http://npm.im/once for this specific use case
+var once = wrappy(function (cb) {
+  var called = false
+  return function () {
+    if (called) return
+    called = true
+    return cb.apply(this, arguments)
+  }
+})
 
-```sh
-npm install --save side-channel-map
+function printBoo () {
+  console.log('boo')
+}
+// has some rando property
+printBoo.iAmBooPrinter = true
+
+var onlyPrintOnce = once(printBoo)
+
+onlyPrintOnce() // prints 'boo'
+onlyPrintOnce() // does nothing
+
+// random property is retained!
+assert.equal(onlyPrintOnce.iAmBooPrinter, true)
 ```
-
-## Usage/Examples
-
-```js
-const assert = require('assert');
-const getSideChannelMap = require('side-channel-map');
-
-const channel = getSideChannelMap();
-
-const key = {};
-assert.equal(channel.has(key), false);
-assert.throws(() => channel.assert(key), TypeError);
-
-channel.set(key, 42);
-
-channel.assert(key); // does not throw
-assert.equal(channel.has(key), true);
-assert.equal(channel.get(key), 42);
-
-channel.delete(key);
-assert.equal(channel.has(key), false);
-assert.throws(() => channel.assert(key), TypeError);
-```
-
-## Tests
-
-Clone the repo, `npm install`, and run `npm test`
-
-[package-url]: https://npmjs.org/package/side-channel-map
-[npm-version-svg]: https://versionbadg.es/ljharb/side-channel-map.svg
-[deps-svg]: https://david-dm.org/ljharb/side-channel-map.svg
-[deps-url]: https://david-dm.org/ljharb/side-channel-map
-[dev-deps-svg]: https://david-dm.org/ljharb/side-channel-map/dev-status.svg
-[dev-deps-url]: https://david-dm.org/ljharb/side-channel-map#info=devDependencies
-[npm-badge-png]: https://nodei.co/npm/side-channel-map.png?downloads=true&stars=true
-[license-image]: https://img.shields.io/npm/l/side-channel-map.svg
-[license-url]: LICENSE
-[downloads-image]: https://img.shields.io/npm/dm/side-channel-map.svg
-[downloads-url]: https://npm-stat.com/charts.html?package=side-channel-map
-[codecov-image]: https://codecov.io/gh/ljharb/side-channel-map/branch/main/graphs/badge.svg
-[codecov-url]: https://app.codecov.io/gh/ljharb/side-channel-map/
-[actions-image]: https://img.shields.io/endpoint?url=https://github-actions-badge-u3jn4tfpocch.runkit.sh/ljharb/side-channel-map
-[actions-url]: https://github.com/ljharb/side-channel-map/actions

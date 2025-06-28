@@ -1,0 +1,31 @@
+{
+  "name": "ai-tutor-api",
+  "version": "1.0.0",
+  "description": "An AI tutor API that provides topic explanations, chart data, and speech synthesis.",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "say": "^0.16.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": "18.x"
+  },
+  "keywords": [
+    "AI",
+    "tutor",
+    "education",
+    "express",
+    "text-to-speech"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}
