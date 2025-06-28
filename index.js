@@ -1,211 +1,327 @@
 /*!
- * mime-types
- * Copyright(c) 2014 Jonathan Ong
- * Copyright(c) 2015 Douglas Christopher Wilson
+ * proxy-addr
+ * Copyright(c) 2014-2016 Douglas Christopher Wilson
  * MIT Licensed
  */
 
 'use strict'
 
 /**
- * Module dependencies.
- * @private
- */
-
-var db = require('mime-db')
-var extname = require('path').extname
-var mimeScore = require('./mimeScore')
-
-/**
- * Module variables.
- * @private
- */
-
-var EXTRACT_TYPE_REGEXP = /^\s*([^;\s]*)(?:;|\s|$)/
-var TEXT_TYPE_REGEXP = /^text\//i
-
-/**
  * Module exports.
  * @public
  */
 
-exports.charset = charset
-exports.charsets = { lookup: charset }
-exports.contentType = contentType
-exports.extension = extension
-exports.extensions = Object.create(null)
-exports.lookup = lookup
-exports.types = Object.create(null)
-exports._extensionConflicts = []
-
-// Populate the extensions/types maps
-populateMaps(exports.extensions, exports.types)
+module.exports = proxyaddr
+module.exports.all = alladdrs
+module.exports.compile = compile
 
 /**
- * Get the default charset for a MIME type.
- *
- * @param {string} type
- * @return {boolean|string}
+ * Module dependencies.
+ * @private
  */
 
-function charset (type) {
-  if (!type || typeof type !== 'string') {
-    return false
+var forwarded = require('forwarded')
+var ipaddr = require('ipaddr.js')
+
+/**
+ * Variables.
+ * @private
+ */
+
+var DIGIT_REGEXP = /^[0-9]+$/
+var isip = ipaddr.isValid
+var parseip = ipaddr.parse
+
+/**
+ * Pre-defined IP ranges.
+ * @private
+ */
+
+var IP_RANGES = {
+  linklocal: ['169.254.0.0/16', 'fe80::/10'],
+  loopback: ['127.0.0.1/8', '::1/128'],
+  uniquelocal: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7']
+}
+
+/**
+ * Get all addresses in the request, optionally stopping
+ * at the first untrusted.
+ *
+ * @param {Object} request
+ * @param {Function|Array|String} [trust]
+ * @public
+ */
+
+function alladdrs (req, trust) {
+  // get addresses
+  var addrs = forwarded(req)
+
+  if (!trust) {
+    // Return all addresses
+    return addrs
   }
 
-  // TODO: use media-typer
-  var match = EXTRACT_TYPE_REGEXP.exec(type)
-  var mime = match && db[match[1].toLowerCase()]
-
-  if (mime && mime.charset) {
-    return mime.charset
+  if (typeof trust !== 'function') {
+    trust = compile(trust)
   }
 
-  // default text/* to utf-8
-  if (match && TEXT_TYPE_REGEXP.test(match[1])) {
-    return 'UTF-8'
+  for (var i = 0; i < addrs.length - 1; i++) {
+    if (trust(addrs[i], i)) continue
+
+    addrs.length = i + 1
   }
 
+  return addrs
+}
+
+/**
+ * Compile argument into trust function.
+ *
+ * @param {Array|String} val
+ * @private
+ */
+
+function compile (val) {
+  if (!val) {
+    throw new TypeError('argument is required')
+  }
+
+  var trust
+
+  if (typeof val === 'string') {
+    trust = [val]
+  } else if (Array.isArray(val)) {
+    trust = val.slice()
+  } else {
+    throw new TypeError('unsupported trust argument')
+  }
+
+  for (var i = 0; i < trust.length; i++) {
+    val = trust[i]
+
+    if (!Object.prototype.hasOwnProperty.call(IP_RANGES, val)) {
+      continue
+    }
+
+    // Splice in pre-defined range
+    val = IP_RANGES[val]
+    trust.splice.apply(trust, [i, 1].concat(val))
+    i += val.length - 1
+  }
+
+  return compileTrust(compileRangeSubnets(trust))
+}
+
+/**
+ * Compile `arr` elements into range subnets.
+ *
+ * @param {Array} arr
+ * @private
+ */
+
+function compileRangeSubnets (arr) {
+  var rangeSubnets = new Array(arr.length)
+
+  for (var i = 0; i < arr.length; i++) {
+    rangeSubnets[i] = parseipNotation(arr[i])
+  }
+
+  return rangeSubnets
+}
+
+/**
+ * Compile range subnet array into trust function.
+ *
+ * @param {Array} rangeSubnets
+ * @private
+ */
+
+function compileTrust (rangeSubnets) {
+  // Return optimized function based on length
+  var len = rangeSubnets.length
+  return len === 0
+    ? trustNone
+    : len === 1
+      ? trustSingle(rangeSubnets[0])
+      : trustMulti(rangeSubnets)
+}
+
+/**
+ * Parse IP notation string into range subnet.
+ *
+ * @param {String} note
+ * @private
+ */
+
+function parseipNotation (note) {
+  var pos = note.lastIndexOf('/')
+  var str = pos !== -1
+    ? note.substring(0, pos)
+    : note
+
+  if (!isip(str)) {
+    throw new TypeError('invalid IP address: ' + str)
+  }
+
+  var ip = parseip(str)
+
+  if (pos === -1 && ip.kind() === 'ipv6' && ip.isIPv4MappedAddress()) {
+    // Store as IPv4
+    ip = ip.toIPv4Address()
+  }
+
+  var max = ip.kind() === 'ipv6'
+    ? 128
+    : 32
+
+  var range = pos !== -1
+    ? note.substring(pos + 1, note.length)
+    : null
+
+  if (range === null) {
+    range = max
+  } else if (DIGIT_REGEXP.test(range)) {
+    range = parseInt(range, 10)
+  } else if (ip.kind() === 'ipv4' && isip(range)) {
+    range = parseNetmask(range)
+  } else {
+    range = null
+  }
+
+  if (range <= 0 || range > max) {
+    throw new TypeError('invalid range on address: ' + note)
+  }
+
+  return [ip, range]
+}
+
+/**
+ * Parse netmask string into CIDR range.
+ *
+ * @param {String} netmask
+ * @private
+ */
+
+function parseNetmask (netmask) {
+  var ip = parseip(netmask)
+  var kind = ip.kind()
+
+  return kind === 'ipv4'
+    ? ip.prefixLengthFromSubnetMask()
+    : null
+}
+
+/**
+ * Determine address of proxied request.
+ *
+ * @param {Object} request
+ * @param {Function|Array|String} trust
+ * @public
+ */
+
+function proxyaddr (req, trust) {
+  if (!req) {
+    throw new TypeError('req argument is required')
+  }
+
+  if (!trust) {
+    throw new TypeError('trust argument is required')
+  }
+
+  var addrs = alladdrs(req, trust)
+  var addr = addrs[addrs.length - 1]
+
+  return addr
+}
+
+/**
+ * Static trust function to trust nothing.
+ *
+ * @private
+ */
+
+function trustNone () {
   return false
 }
 
 /**
- * Create a full Content-Type header given a MIME type or extension.
+ * Compile trust function for multiple subnets.
  *
- * @param {string} str
- * @return {boolean|string}
- */
-
-function contentType (str) {
-  // TODO: should this even be in this module?
-  if (!str || typeof str !== 'string') {
-    return false
-  }
-
-  var mime = str.indexOf('/') === -1 ? exports.lookup(str) : str
-
-  if (!mime) {
-    return false
-  }
-
-  // TODO: use content-type or other module
-  if (mime.indexOf('charset') === -1) {
-    var charset = exports.charset(mime)
-    if (charset) mime += '; charset=' + charset.toLowerCase()
-  }
-
-  return mime
-}
-
-/**
- * Get the default extension for a MIME type.
- *
- * @param {string} type
- * @return {boolean|string}
- */
-
-function extension (type) {
-  if (!type || typeof type !== 'string') {
-    return false
-  }
-
-  // TODO: use media-typer
-  var match = EXTRACT_TYPE_REGEXP.exec(type)
-
-  // get extensions
-  var exts = match && exports.extensions[match[1].toLowerCase()]
-
-  if (!exts || !exts.length) {
-    return false
-  }
-
-  return exts[0]
-}
-
-/**
- * Lookup the MIME type for a file path/extension.
- *
- * @param {string} path
- * @return {boolean|string}
- */
-
-function lookup (path) {
-  if (!path || typeof path !== 'string') {
-    return false
-  }
-
-  // get the extension ("ext" or ".ext" or full path)
-  var extension = extname('x.' + path)
-    .toLowerCase()
-    .slice(1)
-
-  if (!extension) {
-    return false
-  }
-
-  return exports.types[extension] || false
-}
-
-/**
- * Populate the extensions and types maps.
+ * @param {Array} subnets
  * @private
  */
 
-function populateMaps (extensions, types) {
-  Object.keys(db).forEach(function forEachMimeType (type) {
-    var mime = db[type]
-    var exts = mime.extensions
+function trustMulti (subnets) {
+  return function trust (addr) {
+    if (!isip(addr)) return false
 
-    if (!exts || !exts.length) {
-      return
-    }
+    var ip = parseip(addr)
+    var ipconv
+    var kind = ip.kind()
 
-    // mime -> extensions
-    extensions[type] = exts
+    for (var i = 0; i < subnets.length; i++) {
+      var subnet = subnets[i]
+      var subnetip = subnet[0]
+      var subnetkind = subnetip.kind()
+      var subnetrange = subnet[1]
+      var trusted = ip
 
-    // extension -> mime
-    for (var i = 0; i < exts.length; i++) {
-      var extension = exts[i]
-      types[extension] = _preferredType(extension, types[extension], type)
+      if (kind !== subnetkind) {
+        if (subnetkind === 'ipv4' && !ip.isIPv4MappedAddress()) {
+          // Incompatible IP addresses
+          continue
+        }
 
-      // DELETE (eventually): Capture extension->type maps that change as a
-      // result of switching to mime-score.  This is just to help make reviewing
-      // PR #119 easier, and can be removed once that PR is approved.
-      const legacyType = _preferredTypeLegacy(
-        extension,
-        types[extension],
-        type
-      )
-      if (legacyType !== types[extension]) {
-        exports._extensionConflicts.push([extension, legacyType, types[extension]])
+        if (!ipconv) {
+          // Convert IP to match subnet IP kind
+          ipconv = subnetkind === 'ipv4'
+            ? ip.toIPv4Address()
+            : ip.toIPv4MappedAddress()
+        }
+
+        trusted = ipconv
+      }
+
+      if (trusted.match(subnetip, subnetrange)) {
+        return true
       }
     }
-  })
-}
 
-// Resolve type conflict using mime-score
-function _preferredType (ext, type0, type1) {
-  var score0 = type0 ? mimeScore(type0, db[type0].source) : 0
-  var score1 = type1 ? mimeScore(type1, db[type1].source) : 0
-
-  return score0 > score1 ? type0 : type1
-}
-
-// Resolve type conflict using pre-mime-score logic
-function _preferredTypeLegacy (ext, type0, type1) {
-  var SOURCE_RANK = ['nginx', 'apache', undefined, 'iana']
-
-  var score0 = type0 ? SOURCE_RANK.indexOf(db[type0].source) : 0
-  var score1 = type1 ? SOURCE_RANK.indexOf(db[type1].source) : 0
-
-  if (
-    exports.types[extension] !== 'application/octet-stream' &&
-    (score0 > score1 ||
-      (score0 === score1 &&
-        exports.types[extension]?.slice(0, 12) === 'application/'))
-  ) {
-    return type0
+    return false
   }
+}
 
-  return score0 > score1 ? type0 : type1
+/**
+ * Compile trust function for single subnet.
+ *
+ * @param {Object} subnet
+ * @private
+ */
+
+function trustSingle (subnet) {
+  var subnetip = subnet[0]
+  var subnetkind = subnetip.kind()
+  var subnetisipv4 = subnetkind === 'ipv4'
+  var subnetrange = subnet[1]
+
+  return function trust (addr) {
+    if (!isip(addr)) return false
+
+    var ip = parseip(addr)
+    var kind = ip.kind()
+
+    if (kind !== subnetkind) {
+      if (subnetisipv4 && !ip.isIPv4MappedAddress()) {
+        // Incompatible IP addresses
+        return false
+      }
+
+      // Convert IP to match subnet IP kind
+      ip = subnetisipv4
+        ? ip.toIPv4Address()
+        : ip.toIPv4MappedAddress()
+    }
+
+    return ip.match(subnetip, subnetrange)
+  }
 }
